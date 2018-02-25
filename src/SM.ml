@@ -23,7 +23,35 @@ type config = int list * Syntax.Stmt.config
 
    Takes a configuration and a program, and returns a configuration as a result
  *)                         
-let eval _ = failwith "Not yet implemented"
+let rec eval c p =
+  let int_of_bool b = if b then 1 else 0 in
+  let bool_of_int i = if i != 0 then true else false in
+  let eval_op op v1 v2 =
+    match op with
+    | "*" -> v1 * v2
+    | "/" -> v1 / v2
+    | "%" -> v1 mod v2
+    | "+" -> v1 + v2
+    | "-" -> v1 - v2
+    | "==" -> int_of_bool (v1 == v2)
+    | "!=" -> int_of_bool (v1 != v2)
+    | "<=" -> int_of_bool (v1 <= v2)
+    | "<"  -> int_of_bool (v1 < v2)
+    | ">=" -> int_of_bool (v1 >= v2)
+    | ">"  -> int_of_bool (v1 > v2)
+    | "!!" -> int_of_bool (bool_of_int v1 || bool_of_int v2)
+    | "&&" -> int_of_bool (bool_of_int v1 && bool_of_int v2)
+    | _ -> failwith ("Unknown operator " ^ op)
+  in
+  match (c, p) with
+  | (c, []) -> c
+  | ((y::x::st, c), BINOP op::p') -> eval (eval_op op x y::st, c) p'
+  | ((st, c), CONST x::p') -> eval (x::st, c) p'
+  | ((st, (s, z::i, o)), READ::p') -> eval (z::st, (s, i ,o)) p'
+  | ((x::st, (s, i, o)), WRITE::p') -> eval (st, (s, i, o @ [x])) p'
+  | ((st, (s, i, o)), LD x::p') -> eval (s x::st, (s, i, o)) p'
+  | ((v::st, (s, i, o)), ST x::p') -> eval (st, (Syntax.Expr.update x v s, i, o)) p'
+  | _ -> failwith "Undefined Behavior"
 
 (* Top-level evaluation
 
@@ -41,4 +69,16 @@ let run i p = let (_, (_, _, o)) = eval ([], (Syntax.Expr.empty, i, [])) p in o
    stack machine
  *)
 
-let compile _ = failwith "Not yet implemented"
+let rec compile stmt =
+  let rec compile_e e =
+    match e with
+    | Syntax.Expr.Const n -> [CONST n]
+    | Syntax.Expr.Var x -> [LD x]
+    | Syntax.Expr.Binop (op, e1, e2) -> compile_e e1 @ compile_e e2 @ [BINOP op]
+  in
+  match stmt with
+  | Syntax.Stmt.Read x -> [READ; ST x]
+  | Syntax.Stmt.Write e -> compile_e e @ [WRITE]
+  | Syntax.Stmt.Assign (x, e) -> compile_e e @ [ST x]
+  | Syntax.Stmt.Seq (st1, st2) -> compile st1 @ compile st2
+  | _ -> failwith "Undefined Behavior"
