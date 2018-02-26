@@ -34,6 +34,28 @@ module Expr =
     *)
     let update x v s = fun y -> if x = y then v else s y
 
+    (* Binary operation evaluator
+          val eval_binop : string -> int -> int -> int
+    *)
+    let eval_binop op v1 v2 =
+      let int_of_bool b = if b then 1 else 0 in
+      let bool_of_int i = if i != 0 then true else false in
+      match op with
+      | "*" -> v1 * v2
+      | "/" -> v1 / v2
+      | "%" -> v1 mod v2
+      | "+" -> v1 + v2
+      | "-" -> v1 - v2
+      | "==" -> int_of_bool (v1 == v2)
+      | "!=" -> int_of_bool (v1 != v2)
+      | "<=" -> int_of_bool (v1 <= v2)
+      | "<"  -> int_of_bool (v1 < v2)
+      | ">=" -> int_of_bool (v1 >= v2)
+      | ">"  -> int_of_bool (v1 > v2)
+      | "!!" -> int_of_bool (bool_of_int v1 || bool_of_int v2)
+      | "&&" -> int_of_bool (bool_of_int v1 && bool_of_int v2)
+      | _ -> failwith ("Unknown operator " ^ op)
+
     (* Expression evaluator
 
           val eval : state -> t -> int
@@ -42,32 +64,13 @@ module Expr =
        the given state.
     *)
     let rec eval env expr =
-      let int_of_bool b = if b then 1 else 0 in
-      let bool_of_int i = if i != 0 then true else false in
-      let eval_op op v1 v2 =
-        match op with
-        | "*" -> v1 * v2
-        | "/" -> v1 / v2
-        | "%" -> v1 mod v2
-        | "+" -> v1 + v2
-        | "-" -> v1 - v2
-        | "==" -> int_of_bool (v1 == v2)
-        | "!=" -> int_of_bool (v1 != v2)
-        | "<=" -> int_of_bool (v1 <= v2)
-        | "<"  -> int_of_bool (v1 < v2)
-        | ">=" -> int_of_bool (v1 >= v2)
-        | ">"  -> int_of_bool (v1 > v2)
-        | "!!" -> int_of_bool (bool_of_int v1 || bool_of_int v2)
-        | "&&" -> int_of_bool (bool_of_int v1 && bool_of_int v2)
-        | _ -> failwith ("Unknown operator " ^ op)
-      in
       match expr with
       | Const x -> x
       | Var x -> env x
       | Binop (op, e1, e2) ->
         let v1 = eval env e1 in
         let v2 = eval env e2 in
-        eval_op op v1 v2
+        eval_binop op v1 v2
 
   end
                     

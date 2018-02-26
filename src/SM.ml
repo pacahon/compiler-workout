@@ -24,28 +24,9 @@ type config = int list * Syntax.Stmt.config
    Takes a configuration and a program, and returns a configuration as a result
  *)                         
 let rec eval c p =
-  let int_of_bool b = if b then 1 else 0 in
-  let bool_of_int i = if i != 0 then true else false in
-  let eval_op op v1 v2 =
-    match op with
-    | "*" -> v1 * v2
-    | "/" -> v1 / v2
-    | "%" -> v1 mod v2
-    | "+" -> v1 + v2
-    | "-" -> v1 - v2
-    | "==" -> int_of_bool (v1 == v2)
-    | "!=" -> int_of_bool (v1 != v2)
-    | "<=" -> int_of_bool (v1 <= v2)
-    | "<"  -> int_of_bool (v1 < v2)
-    | ">=" -> int_of_bool (v1 >= v2)
-    | ">"  -> int_of_bool (v1 > v2)
-    | "!!" -> int_of_bool (bool_of_int v1 || bool_of_int v2)
-    | "&&" -> int_of_bool (bool_of_int v1 && bool_of_int v2)
-    | _ -> failwith ("Unknown operator " ^ op)
-  in
   match (c, p) with
   | (c, []) -> c
-  | ((y::x::st, c), BINOP op::p') -> eval (eval_op op x y::st, c) p'
+  | ((y::x::st, c), BINOP op::p') -> eval (Syntax.Expr.eval_binop op x y::st, c) p'
   | ((st, c), CONST x::p') -> eval (x::st, c) p'
   | ((st, (s, z::i, o)), READ::p') -> eval (z::st, (s, i ,o)) p'
   | ((x::st, (s, i, o)), WRITE::p') -> eval (st, (s, i, o @ [x])) p'
