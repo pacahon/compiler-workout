@@ -75,6 +75,9 @@ module Expr =
         let v2 = eval env e2 in
         eval_binop op v1 v2
 
+    let binop_specifiers_helper operators =
+      List.map (fun op -> ostap ($(op)), fun x y -> Binop (op, x, y)) operators
+
     (* Expression parser. You can use the following terminals:
 
          IDENT   --- a non-empty identifier a-zA-Z[a-zA-Z0-9_]* as a string
@@ -82,7 +85,21 @@ module Expr =
    
     *)
     ostap (
-      parse: empty {failwith "Not implemented yet"}
+      parse: expr;
+      expr:
+        !(Ostap.Util.expr
+             (fun x -> x)
+             [|  (* --- an array of binary operator specifiers, ordered by the priority in increasing order *)
+               `Lefta, binop_specifiers_helper ["!!"];
+               `Lefta, binop_specifiers_helper ["&&"];
+               `Nona , binop_specifiers_helper [">="; ">"; "<="; "<"; "=="; "!="];
+               `Lefta, binop_specifiers_helper ["+"; "-"];
+               `Lefta, binop_specifiers_helper ["*"; "/"; "%"];
+             |]
+             primary
+           );
+
+        primary: x:IDENT {Var x} | c:DECIMAL {Const c} | -"(" expr -")"
     )
 
   end
@@ -117,7 +134,11 @@ module Stmt =
 
     (* Statement parser *)
     ostap (
-      parse: empty {failwith "Not implemented yet"}
+      stmt:
+        x:IDENT -":=" e:!(Expr.parse)        {Assign (x, e)}
+        | -"read" -"(" s:IDENT -")"          {Read s}
+        | -"write" -"(" v:!(Expr.parse) -")" {Write v};
+      parse: <s::ss> : !(Ostap.Util.listBy)[ostap (";")][stmt] {List.fold_left (fun x y -> Seq (x, y)) s ss}
     )
       
   end
