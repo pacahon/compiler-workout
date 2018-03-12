@@ -101,10 +101,31 @@ let rec compile env code =
     | BINOP op ->
       let opnd2, opnd1, env' = env#pop2 in
       let addr, env'' = env#allocate in
+      let set_zero r = Binop ("^", r, r)
+      in
       env'', match op with
-      | "*" | "+" | "-" -> [Mov (opnd1, eax); Binop (op, eax, opnd2); Mov (eax, addr)]
-      | _ ->
-          failwith "not implemented yet"
+      | "*" | "+" | "-" ->
+        [Mov (opnd1, eax); Binop (op, opnd2, eax); Mov (eax, addr)]
+      | "/" | "%" ->
+        let result = if op = "/" then eax else edx in
+        [Mov (opnd1, eax); Cltd; Mov (opnd2, edi); IDiv edi; Mov (result, addr)]
+      | ">" | ">=" | "<" | "<=" | "==" | "!=" ->
+        let op_to_suffix = function
+          | ">" -> "g"
+          | ">=" -> "ge"
+          | "<" -> "l"
+          | "<=" -> "le"
+          | "==" -> "e"
+          | "!=" -> "ne"
+          | _ -> failwith "unknown operator"
+        in
+        [Mov (opnd1, eax); Binop ("cmp", opnd2, eax); set_zero eax; Set (op_to_suffix op, "%al"); Mov (eax, addr)]
+      | "&&" | "!!" ->
+        (* Compares operand value with zero and saves the result in the first bite of the register  *)
+        let cmp_zero opnd reg raddr = [set_zero reg; Binop ("cmp", opnd, reg); Set ("ne", raddr)]
+        in
+        cmp_zero opnd1 eax "%al" @ cmp_zero opnd2 edx "%dl" @ [Binop (op, eax, edx); Mov (edx, addr)]
+      | _ -> failwith "unknown binop"
     | _ -> failwith "Not yet supported"
   in
   match code with
