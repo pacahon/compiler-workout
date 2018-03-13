@@ -100,7 +100,7 @@ let rec compile env code =
       env', [Push addr; Call "Lwrite"; Pop eax]
     | BINOP op ->
       let opnd2, opnd1, env' = env#pop2 in
-      let addr, env'' = env#allocate in
+      let addr, env'' = env'#allocate in
       let set_zero r = Binop ("^", r, r)
       in
       env'', match op with
@@ -119,7 +119,7 @@ let rec compile env code =
           | "!=" -> "ne"
           | _ -> failwith "unknown operator"
         in
-        [Mov (opnd1, eax); Binop ("cmp", opnd2, eax); set_zero eax; Set (op_to_suffix op, "%al"); Mov (eax, addr)]
+        [Mov (opnd1, eax); set_zero edx; Binop ("cmp", opnd2, eax); Set (op_to_suffix op, "%dl"); Mov (edx, addr)]
       | "&&" | "!!" ->
         (* Compares operand value with zero and saves the result in the first bite of the register  *)
         let cmp_zero opnd reg raddr = [set_zero reg; Binop ("cmp", opnd, reg); Set ("ne", raddr)]
