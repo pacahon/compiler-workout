@@ -81,6 +81,11 @@ open SM
    of x86 instructions
 *)
 let rec compile env code =
+  let mov opnd1 opnd2 =
+    match opnd1, opnd2 with
+    | R _, _ | _, R _ -> [Mov (opnd1, opnd2)]
+    | _ -> [Mov (opnd1, eax); Mov (eax, opnd2)]
+  in
   (* compile_insn: env -> insn -> env * instr list *)
   let rec compile_insn env = function
     | CONST x ->
@@ -88,10 +93,10 @@ let rec compile env code =
       env', [Mov (L x, addr)]
     | LD x ->
       let addr, env' = (env#global x)#allocate in
-      env', [Mov (M (env#loc x), addr)]
+      env', mov (M (env#loc x) addr)
     | ST x ->
       let addr, env' = (env#global x)#pop in
-      env', [Mov (addr, M (env#loc x))]
+      env', mov addr (M (env#loc x))
     | READ ->
       let addr, env' = env#allocate in
       env', [Call "Lread"; Mov (eax, addr)]
