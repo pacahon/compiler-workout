@@ -93,7 +93,7 @@ let rec compile env code =
       env', [Mov (L x, addr)]
     | LD x ->
       let addr, env' = (env#global x)#allocate in
-      env', mov (M (env#loc x) addr)
+      env', mov (M (env#loc x)) addr
     | ST x ->
       let addr, env' = (env#global x)#pop in
       env', mov addr (M (env#loc x))
