@@ -86,7 +86,72 @@ open SM
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
-let compile env code = failwith "Not yet implemented"
+let rec compile env code =
+  let mov opnd1 opnd2 =
+    match opnd1, opnd2 with
+    | R _, _ | _, R _ -> [Mov (opnd1, opnd2)]
+    | _ -> [Mov (opnd1, eax); Mov (eax, opnd2)]
+  in
+  (* compile_insn: env -> insn -> env * instr list *)
+  let rec compile_insn env = function
+    | CONST x ->
+      let addr, env' = env#allocate in
+      env', [Mov (L x, addr)]
+    | LD x ->
+      let addr, env' = (env#global x)#allocate in
+      env', mov (M (env#loc x)) addr
+    | ST x ->
+      let addr, env' = (env#global x)#pop in
+      env', mov addr (M (env#loc x))
+    | LABEL x ->
+      env, [Label x]
+    | JMP x ->
+      env, [Jmp x]
+    | CJMP (suffix, loc) ->
+      let addr, env' = env#pop in
+      env', [Binop ("cmp", L 0, addr); CJmp (suffix, loc)]
+    | READ ->
+      let addr, env' = env#allocate in
+      env', [Call "Lread"; Mov (eax, addr)]
+    | WRITE ->
+      let addr, env' = env#pop in
+      env', [Push addr; Call "Lwrite"; Pop eax]
+    | BINOP op ->
+      let opnd2, opnd1, env' = env#pop2 in
+      let addr, env'' = env'#allocate in
+      let set_zero r = Binop ("^", r, r)
+      in
+      env'', match op with
+      | "*" | "+" | "-" ->
+        [Mov (opnd1, eax); Binop (op, opnd2, eax); Mov (eax, addr)]
+      | "/" | "%" ->
+        let result = if op = "/" then eax else edx in
+        [Mov (opnd1, eax); Cltd; Mov (opnd2, edi); IDiv edi; Mov (result, addr)]
+      | ">" | ">=" | "<" | "<=" | "==" | "!=" ->
+        let op_to_suffix = function
+          | ">" -> "g"
+          | ">=" -> "ge"
+          | "<" -> "l"
+          | "<=" -> "le"
+          | "==" -> "e"
+          | "!=" -> "ne"
+          | _ -> failwith "unknown operator"
+        in
+        [Mov (opnd1, eax); set_zero edx; Binop ("cmp", opnd2, eax); Set (op_to_suffix op, "%dl"); Mov (edx, addr)]
+      | "&&" | "!!" ->
+        (* Compares operand value with zero and saves the result in the first bite of the register  *)
+        let cmp_zero opnd reg raddr = [set_zero reg; Binop ("cmp", opnd, reg); Set ("ne", raddr)]
+        in
+        cmp_zero opnd1 eax "%al" @ cmp_zero opnd2 edx "%dl" @ [Binop (op, eax, edx); Mov (edx, addr)]
+      | _ -> failwith "unknown binop"
+    | _ -> failwith "Not yet supported"
+  in
+  match code with
+  | [] -> env, []
+  | instr::code' ->
+    let env', asm = compile_insn env instr in
+    let env'', asm' = compile env' code' in
+    env'', asm @ asm'
 
 (* A set of strings *)           
 module S = Set.Make (String)
