@@ -162,7 +162,7 @@ module Stmt =
         %"od"                               {Seq (s1, While (e, Seq(s2, s3)))}  (* FIXME: how to undo s1 after loop? *)
       | "read" -"(" x:IDENT -")"            {Read x}
       | "write" -"(" e:!(Expr.parse) -")"   {Write e}
-      | x:IDENT -":=" e:!(Expr.parse)        {Assign (x, e)}
+      | x:IDENT -":=" e:!(Expr.parse)       {Assign (x, e)}
     )
 
   end
