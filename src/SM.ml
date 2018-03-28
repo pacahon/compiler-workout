@@ -22,15 +22,6 @@ type prg = insn list
 type config = int list * Stmt.config
 
 
-let labelGenerator = object
-  val mutable counter = 0
-
-  method next =
-    counter <- counter + 1;
-    "label_" ^ string_of_int counter
-end
-
-
 (* Stack machine interpreter
 
      val eval : env -> config -> prg -> config
@@ -84,28 +75,39 @@ let run p i =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-let rec compile p =
+let compile p =
+  let labelGenerator = object
+    val mutable counter = 0
+
+    method next =
+      counter <- counter + 1;
+      "label_" ^ string_of_int counter
+    end
+  in
   let rec compile_e e =
     match e with
     | Language.Expr.Const n -> [CONST n]
     | Language.Expr.Var x -> [LD x]
     | Language.Expr.Binop (op, e1, e2) -> compile_e e1 @ compile_e e2 @ [BINOP op]
   in
-  match p with
-  | Language.Stmt.Read x -> [READ; ST x]
-  | Language.Stmt.Write e -> compile_e e @ [WRITE]
-  | Language.Stmt.Assign (x, e) -> compile_e e @ [ST x]
-  | Language.Stmt.Seq (st1, st2) -> compile st1 @ compile st2
-  | Language.Stmt.Skip -> []
-  | Language.Stmt.If (e, t, f) ->
-    let else_label = labelGenerator#next in
-    let fi_label = labelGenerator#next in
-    compile_e e @ [CJMP ("z", else_label)] @ compile t @ [JMP fi_label] @ [LABEL else_label] @ compile f @ [LABEL fi_label]
-  | Language.Stmt.While (e, s) ->
-    let cond_label = labelGenerator#next in
-    let loop_label = labelGenerator#next in
-    [JMP cond_label] @ [LABEL loop_label] @ compile s @ [LABEL cond_label] @ compile_e e @ [CJMP ("nz", loop_label)]
-  | Language.Stmt.Repeat (s, e) ->
-    let loop_label = labelGenerator#next in
-    [LABEL loop_label] @ compile s @ compile_e e @ [CJMP ("z", loop_label)]
-  | _ -> failwith "Undefined Behavior"
+  let rec compile' p =
+    match p with
+    | Language.Stmt.Read x -> [READ; ST x]
+    | Language.Stmt.Write e -> compile_e e @ [WRITE]
+    | Language.Stmt.Assign (x, e) -> compile_e e @ [ST x]
+    | Language.Stmt.Seq (st1, st2) -> compile' st1 @ compile' st2
+    | Language.Stmt.Skip -> []
+    | Language.Stmt.If (e, t, f) ->
+      let else_label = labelGenerator#next in
+      let fi_label = labelGenerator#next in
+      compile_e e @ [CJMP ("z", else_label)] @ compile' t @ [JMP fi_label] @ [LABEL else_label] @ compile' f @ [LABEL fi_label]
+    | Language.Stmt.While (e, s) ->
+      let cond_label = labelGenerator#next in
+      let loop_label = labelGenerator#next in
+      [JMP cond_label] @ [LABEL loop_label] @ compile' s @ [LABEL cond_label] @ compile_e e @ [CJMP ("nz", loop_label)]
+    | Language.Stmt.Repeat (s, e) ->
+      let loop_label = labelGenerator#next in
+      [LABEL loop_label] @ compile' s @ compile_e e @ [CJMP ("z", loop_label)]
+    | _ -> failwith "Undefined Behavior"
+  in
+  compile' p
