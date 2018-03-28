@@ -135,8 +135,13 @@ module Stmt =
       | Seq    (s1, s2) -> eval (eval conf s1) s2
       | Skip -> conf
       | If (e, t, f) -> (match Expr.eval st e with 0 -> eval conf f | _ -> eval conf t)
-      | While (e, s) -> (match Expr.eval st e with 0 -> conf | _ -> eval conf (Seq (s, stmt)))  (* TODO: reduce Seq? *)
-      | Repeat (s, e) -> (match Expr.eval st e with 0 -> eval conf s | _ -> eval conf (Seq (s, stmt)))
+      | While (e, s) -> (match Expr.eval st e with 0 -> conf | _ -> eval (eval conf s) stmt)
+      | Repeat (s, e) ->
+        let conf' = eval conf s in
+        let (st', _, _) = conf' in
+        match Expr.eval st' e with
+        0 -> eval conf' stmt
+        | _ -> conf'
 
     (* Statement parser *)
     ostap (
@@ -159,7 +164,7 @@ module Stmt =
                 e:!(Expr.parse) -","
                 s2:parse
         %"do" s3:parse 
-        %"od"                               {Seq (s1, While (e, Seq(s2, s3)))}  (* FIXME: how to undo s1 after loop? *)
+        %"od"                               {Seq (s1, While (e, Seq(s3, s2)))}
       | "read" -"(" x:IDENT -")"            {Read x}
       | "write" -"(" e:!(Expr.parse) -")"   {Write e}
       | x:IDENT -":=" e:!(Expr.parse)       {Assign (x, e)}
