@@ -35,7 +35,7 @@ module State =
     let enter st xs = { g = st.g; l = empty.l; scope = xs }
 
     (* Drops a scope *)
-    let leave st st' = { g = st.g; l = st'.l; scope = st'.scope }
+    let leave st st' = { st' with g = st.g }
 
   end
     
@@ -205,6 +205,8 @@ module Stmt =
       | "read" -"(" x:IDENT -")"            {Read x}
       | "write" -"(" e:!(Expr.parse) -")"   {Write e}
       | x:IDENT -":=" e:!(Expr.parse)       {Assign (x, e)}
+      | fun_name:IDENT
+        -"(" args:!(Expr.parse)* -")"       { Call(fun_name, args) }
     )
       
   end
@@ -218,7 +220,7 @@ module Definition =
 
     ostap (
       parse:
-        %"fun" fun_name:IDENT -"(" args:(IDENT)* -")" locals:(IDENT)*
+        %"fun" fun_name:IDENT -"(" args:(IDENT)* -")" locals:(%"local" (IDENT)+)?
         -"{" s:!(Stmt.parse) -"}" { (fun_name, (args, locals, s)) }
     )
 
