@@ -206,7 +206,7 @@ module Stmt =
       | "write" -"(" e:!(Expr.parse) -")"   {Write e}
       | x:IDENT -":=" e:!(Expr.parse)       {Assign (x, e)}
       | fun_name:IDENT
-        -"(" args:!(Expr.parse)* -")"       { Call(fun_name, args) }
+        -"(" args:!(Expr.parse)* -")"       {Call(fun_name, args)}
     )
       
   end
@@ -221,7 +221,7 @@ module Definition =
     ostap (
       parse:
         %"fun" fun_name:IDENT -"(" args:(IDENT)* -")" locals:(%"local" (IDENT)+)?
-        -"{" s:!(Stmt.parse) -"}" { (fun_name, (args, locals, s)) }
+        -"{" s:!(Stmt.parse) -"}" { (fun_name, (args, (match locals with None -> [] | Some xs -> xs), s)) }
     )
 
   end
