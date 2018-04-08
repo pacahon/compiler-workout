@@ -165,12 +165,60 @@ module Stmt =
                                                                     
     (* Statement evaluator
 
-         val eval : env -> config -> t -> config
+         val eval : env -> config -> t -> t -> config
 
-       Takes an environment, a configuration and a statement, and returns another configuration. The 
+       Takes an environment, a configuration, a continuation and a statement, and returns another configuration. The 
        environment is the same as for expressions
     *)
-    let rec eval env ((st, i, o, r) as conf) k stmt = failwith "Not implemented"
+    let rec eval env ((st, i, o, r) as conf) k stmt =
+      let diamond st k =
+        match k with
+        | Skip -> st
+        | _ -> Seq (st, k)
+      in
+      match stmt with
+      | Read x -> (
+        match i with
+        | z::i' -> eval env (State.update x z st, i', o, r) Skip k
+        | _ -> failwith "Unexpected end of input"
+      )
+      | Write e -> (
+        let (st', i', o', Some r') = Expr.eval env conf e in
+        eval env (st', i', o' @ [r'], r) Skip k
+      )
+      | Assign (x, e) -> (
+        let (st', i', o', Some r') = Expr.eval env conf e in
+        eval env (State.update x r' st', i', o', r) Skip k
+      )
+      | Seq (s1, s2) -> eval env conf (diamond s2 k) s1
+      | Skip -> (
+        match k with
+        | Skip -> conf
+        | _ -> eval env conf Skip k
+      )
+      | If (e, t, f) -> (
+        let (st', i', o', Some r') = Expr.eval env conf e in
+        eval env (st', i', o', r) k (match r' with 0 -> f | _ -> t)
+      )
+      | While (e, s) -> (
+        let (st', i', o', Some r') = Expr.eval env conf e in
+        match r' with
+        | 0 -> eval env (st', i', o', r) Skip k
+        | _ -> eval env (st', i', o', r) (diamond stmt k) s
+      )
+      | Repeat (s, e) -> (
+        let cycle = While (Expr.Binop ("==", e, Expr.Const 0), s) in
+        eval env conf (diamond cycle k) s
+      )
+      | Return e -> (
+        match e with
+        | None -> (st, i, o, None)
+        | Some expr -> Expr.eval env conf expr
+      )
+      | Call (fun_name, args) -> (
+        let conf' = Expr.eval env conf (Expr.Call (fun_name, args)) in
+        eval env conf' Skip k
+      )
          
     (* Statement parser *)
     ostap (
