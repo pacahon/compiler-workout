@@ -245,8 +245,7 @@ module Stmt =
       | "write" -"(" e:!(Expr.parse) -")"   {Write e}
       | x:IDENT -":=" e:!(Expr.parse)       {Assign (x, e)}
       | %"return" e:!(Expr.parse)?          {Return e}
-      | fun_name:IDENT
-        -"(" args:!(Expr.parse)* -")"       {Call(fun_name, args)}
+      | fun_name:IDENT -"(" args:!(Util.list0)[Expr.parse] -")" {Call (fun_name, args)}
     )
       
   end
