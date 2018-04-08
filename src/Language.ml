@@ -205,8 +205,7 @@ module Stmt =
       | "read" -"(" x:IDENT -")"            {Read x}
       | "write" -"(" e:!(Expr.parse) -")"   {Write e}
       | x:IDENT -":=" e:!(Expr.parse)       {Assign (x, e)}
-      | fun_name:IDENT
-        -"(" args:!(Expr.parse)* -")"       {Call(fun_name, args)}
+      | fun_name:IDENT -"(" args:!(Util.list0)[Expr.parse] -")" {Call (fun_name, args)}
     )
       
   end
@@ -219,8 +218,9 @@ module Definition =
     type t = string * (string list * string list * Stmt.t)
 
     ostap (
+      arg: IDENT;
       parse:
-        %"fun" fun_name:IDENT -"(" args:(IDENT)* -")" locals:(%"local" (IDENT)+)?
+        %"fun" fun_name:IDENT -"(" args:!(Util.list0 arg) -")" locals:(%"local" !(Util.list arg))?
         -"{" s:!(Stmt.parse) -"}" { (fun_name, (args, (match locals with None -> [] | Some xs -> xs), s)) }
     )
 
