@@ -112,7 +112,6 @@ module Expr =
           (conf', (v :: acc))
         in
         let (conf', args_v) = List.fold_left eval_arg (conf, []) args_e in
-        (* FIXME: double check args order *)
         env#definition env fun_name (List.rev args_v) conf'
          
     (* Expression parser. You can use the following terminals:

@@ -54,8 +54,8 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
     | CALL fun_name ->
       let cstack' = ((prg', st)::cstack) in eval env (cstack', stack, c) (env#labeled fun_name)
     | BEGIN (args, locals) -> (
-      let bind x ((v :: stack), state) = (stack, State.update x v state) in
-      let (stack', st') = List.fold_right bind args (stack, State.enter st (args @ locals)) in
+      let bind ((v :: stack), state) x = (stack, State.update x v state) in
+      let (stack', st') = List.fold_left bind (stack, State.enter st (args @ locals)) args in
       eval env (cstack, stack', (st', i, o)) prg'
     )
     | END -> (
@@ -126,7 +126,7 @@ let compile (defs, p) =
       [LABEL loop_label] @ compile' s @ compile_e e @ [CJMP ("z", loop_label)]
     | Language.Stmt.Call (fun_name, args) ->
       List.concat (List.map compile_e (List.rev args)) @ [CALL fun_name]
-    | Stmt.Return e -> (
+    | Language.Stmt.Return e -> (
       match e with
       | None -> [END]
       | Some expr -> compile_e expr @ [END]
