@@ -120,7 +120,7 @@ let rec compile env code =
     | WRITE ->
       let addr, env' = env#pop in
       env', [Push addr; Call "Lwrite"; Pop eax]
-    | BINOP op ->
+    | BINOP op -> (
       let opnd2, opnd1, env' = env#pop2 in
       let addr, env'' = env'#allocate in
       let set_zero r = Binop ("^", r, r)
@@ -148,6 +148,7 @@ let rec compile env code =
         in
         cmp_zero opnd1 eax "%al" @ cmp_zero opnd2 edx "%dl" @ [Binop (op, eax, edx); Mov (edx, addr)]
       | _ -> failwith "unknown binop"
+    )
     | BEGIN (fun_name, args, locals) ->
       let env' = env#enter fun_name args locals in
       env', [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env#lsize), esp)]
@@ -157,10 +158,17 @@ let rec compile env code =
       if value_on_stack
       then let x, env' = env#pop in env', [Mov (x, eax); Jmp env'#epilogue]
       else env, [Jmp env#epilogue]
-    | CALL (f, n, p) ->
-      let pushr, popr = List.split @@ List.map (fun r -> (Push r, Pop r)) env#live_registers
+    | CALL (fun_name, args_num, is_procedure) ->
+      let push_regs, pop_regs = List.split @@ List.map (fun r -> (Push r, Pop r)) env#live_registers in
+      let rec collect_args acc env = function
+        | 0 -> env, acc
+        | n -> let x, env' = env#pop in collect_args (Push x :: acc) env' (n - 1)
       in
-      (* TODO: Fix this *)
+      let env', push_args = collect_args [] env args_num in
+      let code = push_regs @ push_args @ [Call fun_name] @ (if args_num = 0 then [] else [Binop ("-", L (args_num * word_size), esp)]) @ (List.rev pop_regs) in
+      if is_procedure
+      then env', code
+      else let addr, env'' = env'#allocate in env'', code @ [Mov (eax, addr)]
     | _ -> failwith "Not yet supported"
   in
   match code with
