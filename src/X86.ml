@@ -165,7 +165,7 @@ let rec compile env code =
         | n -> let x, env' = env#pop in collect_args (Push x :: acc) env' (n - 1)
       in
       let env', push_args = collect_args [] env args_num in
-      let code = push_regs @ push_args @ [Call fun_name] @ (if args_num = 0 then [] else [Binop ("-", L (args_num * word_size), esp)]) @ (List.rev pop_regs) in
+      let code = push_regs @ push_args @ [Call fun_name] @ (if args_num = 0 then [] else [Binop ("+", L (args_num * word_size), esp)]) @ (List.rev pop_regs) in
       if is_procedure
       then env', code
       else let addr, env'' = env'#allocate in env'', code @ [Mov (eax, addr)]
