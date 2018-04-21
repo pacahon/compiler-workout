@@ -103,10 +103,10 @@ let rec compile env code =
       env', [Mov (L x, addr)]
     | LD x ->
       let addr, env' = (env#global x)#allocate in
-      env', mov (env#loc x) addr
+      env', mov (env'#loc x) addr
     | ST x ->
       let addr, env' = (env#global x)#pop in
-      env', mov addr (env#loc x)
+      env', mov addr (env'#loc x)
     | LABEL x ->
       env, [Label x]
     | JMP x ->
@@ -151,7 +151,7 @@ let rec compile env code =
     )
     | BEGIN (fun_name, args, locals) ->
       let env' = env#enter fun_name args locals in
-      env', [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env#lsize), esp)]
+      env', [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env'#lsize), esp)]
     | END ->
       env, [Label env#epilogue; Mov (ebp, esp); Pop ebp; Ret; Meta (Printf.sprintf "\t.set %s, %d" env#lsize (env#allocated * word_size))]
     | RET value_on_stack ->

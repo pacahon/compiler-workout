@@ -136,4 +136,4 @@ let compile (defs, p) =
   let compile_def (fun_name, (args, locals, body)) =
     [LABEL fun_name; BEGIN (fun_name, args, locals)] @ compile' body @ [END]
   in
-  [LABEL "main"] @ compile' p @ [END] @ List.concat (List.map compile_def defs)
+  compile' p @ [END] @ List.concat (List.map compile_def defs)
