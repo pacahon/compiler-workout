@@ -81,4 +81,55 @@ let run p i =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-let compile (defs, p) = failwith "Not implemented"
+let compile (defs, p) =
+  let labelGenerator = object
+    val mutable counter = 0
+
+    method next =
+      counter <- counter + 1;
+      "label_" ^ string_of_int counter
+    end
+  in
+  let rec compile_e e =
+    match e with
+    | Language.Expr.Const n -> [CONST n]
+    | Language.Expr.Array es -> (List.concat (List.map compile_expr es)) @ [CALL ("$array", List.length es, true)]
+    | Language.Expr.String s -> [STRING s]
+    | Language.Expr.Var x -> [LD x]
+    | Language.Expr.Binop (op, e1, e2) -> compile_e e1 @ compile_e e2 @ [BINOP op]
+    | Language.Expr.Elem (xs_e, index_e) -> compile_e xs_e @ compile_e index_e @ [CALL ("$elem", 2, false)]
+    | Language.Expr.Length xs_e -> compile_e xs_e @ [CALL ("$length", 1, false)]
+    | Language.Expr.Call (fun_name, args) ->
+      List.concat (List.map compile_e (List.rev args)) @ [CALL (fun_name, List.length args, false)]
+  in
+  let rec compile' p =
+    match p with
+    | Language.Stmt.Read x -> [READ; ST x]
+    | Language.Stmt.Write e -> compile_e e @ [WRITE]
+    | Language.Stmt.Assign (x, e) -> compile_e e @ [ST x]
+    | Language.Stmt.Seq (st1, st2) -> compile' st1 @ compile' st2
+    | Language.Stmt.Skip -> []
+    | Language.Stmt.If (e, t, f) ->
+      let else_label = labelGenerator#next in
+      let fi_label = labelGenerator#next in
+      compile_e e @ [CJMP ("z", else_label)] @ compile' t @ [JMP fi_label] @ [LABEL else_label] @ compile' f @ [LABEL fi_label]
+    | Language.Stmt.While (e, s) ->
+      let cond_label = labelGenerator#next in
+      let loop_label = labelGenerator#next in
+      [JMP cond_label] @ [LABEL loop_label] @ compile' s @ [LABEL cond_label] @ compile_e e @ [CJMP ("nz", loop_label)]
+    | Language.Stmt.Repeat (s, e) ->
+      let loop_label = labelGenerator#next in
+      [LABEL loop_label] @ compile' s @ compile_e e @ [CJMP ("z", loop_label)]
+    | Language.Stmt.Call (fun_name, args) ->
+      List.concat (List.map compile_e (List.rev args)) @ [CALL (fun_name, List.length args, true)]
+    | Language.Stmt.Return e -> (
+      match e with
+      | None -> [RET false]
+      | Some expr -> compile_e expr @ [RET true]
+    )
+    | _ -> failwith "Undefined Behavior"
+  in
+  let compile_def (fun_name, (args, locals, body)) =
+    [LABEL fun_name; BEGIN (fun_name, args, locals)] @ compile' body @ [END]
+  in
+  compile' p @ [END] @ List.concat (List.map compile_def defs)
