@@ -38,6 +38,7 @@ let split n l =
   | n -> let h::tl = rest in unzip (h::taken, tl) (n-1)
   in
   unzip ([], l) n
+
         
 let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
   | [] -> conf
@@ -48,8 +49,7 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
     | STRING s     -> eval env (cstack, (Value.of_string s)::stack, c) prg'
     | LD x         -> eval env (cstack, State.eval st x :: stack, c) prg'
     | ST x         -> let v::stack' = stack in eval env (cstack, stack', (State.update x v st, i, o)) prg'
-    (* FIXME: List.rev indexes ? *)
-    | STA (x, len) -> let v::indexes, stack' = split (len + 1) stack in eval env (cstack, stack', (Language.Stmt.update st x v indexes, i, o)) prg'
+    | STA (x, len) -> let v::indexes, stack' = split (len + 1) stack in eval env (cstack, stack', (Language.Stmt.update st x v (List.rev indexes), i, o)) prg'
     | LABEL _      -> eval env conf prg'
     | JMP l        -> eval env conf (env#labeled l)
     | CJMP (s, l)  ->
@@ -60,8 +60,11 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
         else prg'
       in
       eval env (cstack, stack', c) prg''
-    | CALL (fun_name, _, _) ->
-      let cstack' = ((prg', st)::cstack) in eval env (cstack', stack, c) (env#labeled fun_name)
+    | CALL (fun_name, args_length, is_procedure) -> (
+      if env#is_label fun_name
+      then let cstack' = ((prg', st)::cstack) in eval env (cstack', stack, c) (env#labeled fun_name)
+      else eval env (env#builtin conf fun_name args_length is_procedure) prg'
+    )
     | BEGIN (_, args, locals) -> (
       let bind ((v :: stack), state) x = (stack, State.update x v state) in
       let (stack', st') = List.fold_left bind (stack, State.enter st (args @ locals)) args in
@@ -126,14 +129,11 @@ let compile (defs, p) =
   let rec compile_e e =
     match e with
     | Language.Expr.Const n -> [CONST n]
-    (* TODO: List.rev? *)
-    | Language.Expr.Array es -> (List.concat (List.map compile_e es)) @ [CALL ("$array", List.length es, true)]
+    | Language.Expr.Array es -> (List.concat (List.map compile_e es)) @ [CALL ("$array", List.length es, false)]
     | Language.Expr.String s -> [STRING s]
     | Language.Expr.Var x -> [LD x]
     | Language.Expr.Binop (op, e1, e2) -> compile_e e1 @ compile_e e2 @ [BINOP op]
-    (* TODO: List.rev? *)
     | Language.Expr.Elem (xs_e, index_e) -> compile_e xs_e @ compile_e index_e @ [CALL ("$elem", 2, false)]
-    (* TODO: List.rev? *)
     | Language.Expr.Length xs_e -> compile_e xs_e @ [CALL ("$length", 1, false)]
     | Language.Expr.Call (fun_name, args) ->
       List.concat (List.map compile_e (List.rev args)) @ [CALL (fun_name, List.length args, false)]

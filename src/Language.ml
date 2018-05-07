@@ -85,7 +85,7 @@ module Builtin =
                                      | Value.String s -> Value.of_int @@ Char.code s.[i]
                                      | Value.Array  a -> List.nth a i
                                )
-                    )         
+                    )
     | "$length"  -> (st, i, o, Some (Value.of_int (match List.hd args with Value.Array a -> List.length a | Value.String s -> String.length s)))
     | "$array"   -> (st, i, o, Some (Value.of_array args))
     | "isArray"  -> let [a] = args in (st, i, o, Some (Value.of_int @@ match a with Value.Array  _ -> 1 | _ -> 0))
@@ -333,7 +333,7 @@ module Stmt =
                 s2:parse
         %"do" s3:parse
         %"od"                               {Seq (s1, While (e, Seq(s3, s2)))}
-      | x:IDENT index:(-"[" !(Expr.parse) -"]")* ":=" e:!(Expr.parse) {Assign (x, index, e)}
+      | x:IDENT indexes:(-"[" !(Expr.parse) -"]")* ":=" e:!(Expr.parse) {Assign (x, indexes, e)}
       | %"return" e:!(Expr.parse)?          {Return e}
       | fun_name:IDENT -"(" args:!(Util.list0)[Expr.parse] -")" {Call (fun_name, args)}
     )
