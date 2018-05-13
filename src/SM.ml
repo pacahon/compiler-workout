@@ -49,7 +49,63 @@ let split n l =
   in
   unzip ([], l) n
           
-let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) _ = failwith "Not yet implemented"
+let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
+  | [] -> conf
+  | insn :: prg' ->
+    match insn with
+    | BINOP op     -> let y::x::stack' = stack in eval env (cstack, Value.of_int (Expr.to_func op (Value.to_int x) (Value.to_int y)) :: stack', c) prg'
+    | CONST i      -> eval env (cstack, (Value.of_int i)::stack, c) prg'
+    | STRING s     -> eval env (cstack, (Value.of_string s)::stack, c) prg'
+    | SEXP (tag, len) -> (
+      let es, stack' = split len stack in
+      eval env (cstack, (Value.sexp tag (List.rev es)) :: stack', c) prg'
+    )
+    | LD x         -> eval env (cstack, State.eval st x :: stack, c) prg'
+    | ST x         -> let v::stack' = stack in eval env (cstack, stack', (State.update x v st, i, o)) prg'
+    | STA (x, len) -> (
+      let v::indexes, stack' = split (len + 1) stack in
+      eval env (cstack, stack', (Language.Stmt.update st x v (List.rev indexes), i, o)) prg'
+    )
+    | LABEL _      -> eval env conf prg'
+    | JMP l        -> eval env conf (env#labeled l)
+    | CJMP (s, l)  ->
+      let x::stack' = stack in
+      let prg'' =
+        if (Value.to_int x = 0 && s = "z") || (Value.to_int x != 0 && s = "nz")
+        then env#labeled l
+        else prg'
+      in
+      eval env (cstack, stack', c) prg''
+    | CALL (fun_name, args_length, is_procedure) -> (
+      if env#is_label fun_name
+      then let cstack' = ((prg', st)::cstack) in eval env (cstack', stack, c) (env#labeled fun_name)
+      else eval env (env#builtin conf fun_name args_length is_procedure) prg'
+    )
+    | BEGIN (_, args, locals) -> (
+      let bind ((v :: stack), state) x = (stack, State.update x v state) in
+      let (stack', st') = List.fold_left bind (stack, State.enter st (args @ locals)) args in
+      eval env (cstack, stack', (st', i, o)) prg'
+    )
+    | END | RET _ -> (
+      match cstack with
+      | [] -> conf
+      | (p, s)::cstack' -> eval env (cstack', stack, (Language.State.leave st s, i, o)) p
+    )
+    | DROP -> eval env (cstack, List.tl stack, c) prg'
+    | DUP -> let v::_ = stack in eval env (cstack, v::stack, c) prg'
+    | SWAP -> let x::y::stack' = stack in eval env (cstack, y::x::stack', c) prg'
+    | TAG s -> (
+      let sexp::stack' = stack in
+      let v = if s = Value.tag_of sexp then 1 else 0 in
+      eval env (cstack, Value.of_int v :: stack', c) prg'
+    )
+    | ENTER names -> (
+      let values, stack' = split (List.length names) stack in
+      let new_scope = List.fold_left2 (fun st x v -> State.bind x v st) State.undefined names values in
+      eval env (cstack, stack', (State.push st new_scope names, i, o)) prg'
+    )
+    | LEAVE -> eval env (cstack, stack, (State.drop st, i, o)) prg'
+    | _ -> failwith "Undefined behavior"
 
 (* Top-level evaluation
 
@@ -99,8 +155,72 @@ let compile (defs, p) =
     args_code @ [CALL (label f, List.length args, p)]
   and pattern lfalse _ = failwith "Not implemented"
   and bindings p = failwith "Not implemented"
-  and expr e = failwith "Not implemented" in
-  let rec compile_stmt l env stmt =  failwith "Not implemented" in
+  and expr e =
+    match e with
+    | Expr.Const n -> [CONST n]
+    | Expr.Array es -> call "$array" es false
+    | Expr.String s -> [STRING s]
+    | Expr.Sexp (tag, es) -> (List.concat (List.map expr es)) @ [SEXP (tag, List.length es)]
+    | Expr.Var x -> [LD x]
+    | Expr.Binop (op, e1, e2) -> expr e1 @ expr e2 @ [BINOP op]
+    | Expr.Elem (xs_e, index_e) -> call "$elem" [xs_e; index_e] false
+    | Expr.Length xs_e -> call "$length" [xs_e] false
+    | Expr.Call (fun_name, args) -> call fun_name (List.rev args) false
+  in
+  let rec compile_stmt l env stmt =
+    match stmt with
+    | Stmt.Assign (x, [], e) -> env, false, expr e @ [ST x]
+    | Stmt.Assign (x, indexes, e) -> (
+      let code = List.concat (List.map expr (indexes @ [e])) @ [STA (x, List.length indexes)] in
+      env, false, code
+    )
+    | Stmt.Seq (st1, st2) -> (
+      let env, _, code1 = compile_stmt l env st1 in
+      let env, _, code2 = compile_stmt l env st2 in
+      env, false, code1 @ code2
+    )
+    | Stmt.Skip -> env, false, []
+    | Stmt.If (e, t, f) -> (
+      let else_label, env = env#get_label in
+      let fi_label, env = env#get_label in
+      let env, _, t_compiled = compile_stmt l env t in
+      let env, _, f_compiled = compile_stmt l env f in
+      env, false, expr e @ [CJMP ("z", else_label)] @ t_compiled @ [JMP fi_label] @ [LABEL else_label] @ f_compiled @ [LABEL fi_label]
+    )
+    | Stmt.While (e, s) -> (
+      let cond_label, env = env#get_label in
+      let loop_label, env = env#get_label in
+      let env, _, body = compile_stmt l env s in
+      env, false, [JMP cond_label] @ [LABEL loop_label] @ body @ [LABEL cond_label] @ expr e @ [CJMP ("nz", loop_label)]
+    )
+    | Stmt.Repeat (s, e) -> (
+      let loop_label, env = env#get_label in
+      let env, _, body = compile_stmt l env s in
+      env, false, [LABEL loop_label] @ body @ expr e @ [CJMP ("z", loop_label)]
+    )
+    | Stmt.Call (fun_name, args) -> env, false, call fun_name (List.rev args) true
+    | Stmt.Case (e, bs) -> (
+      let lend, env = env#get_label in
+      let rec traverse branches env lbl =
+        match branches with
+        | [] -> env, []
+        | (pat, body)::branches' ->
+          let env, _, body_compiled = compile_stmt l env body in
+          let lfalse, env = env#get_label in
+          let env, code = traverse branches' env (Some lfalse) in
+          env, (match lbl with None -> [] | Some l -> [LABEL l]) @ (pattern lfalse pat) @ bindings pat @ body_compiled @ [LEAVE; JMP lend] @ code
+      in
+      let env, code = traverse bs env None in
+      env, false, expr e @ code
+    )
+    | Stmt.Return e -> (
+      match e with
+      | None -> env, false, [RET false]
+      | Some e' -> env, false, expr e' @ [RET true]
+    )
+    | Stmt.Leave -> env, false, [LEAVE]
+    | _ -> failwith "Undefined Behavior"
+  in
   let compile_def env (name, (args, locals, stmt)) =
     let lend, env       = env#get_label in
     let env, flag, code = compile_stmt lend env stmt in
