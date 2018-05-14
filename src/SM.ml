@@ -153,8 +153,18 @@ let compile (defs, p) =
   let rec call f args p =
     let args_code = List.concat @@ List.map expr args in
     args_code @ [CALL (label f, List.length args, p)]
-  and pattern lfalse _ = failwith "Not implemented"
-  and bindings p = failwith "Not implemented"
+  and pattern lfalse = function
+    | Stmt.Pattern.Wildcard -> [DROP]
+    | Stmt.Pattern.Ident _ -> [DROP]
+    | Stmt.Pattern.Sexp (tag_name, xs) -> [DUP; TAG tag_name; CJMP ("z", lfalse)] @ List.concat (List.mapi (fun i x -> [DUP; CONST i; CALL ("$elem", 2, false)] @ pattern lfalse x) xs)
+    | _ -> [JMP lfalse]
+  and bindings p =
+    let rec inner = function
+      | Stmt.Pattern.Wildcard -> [DROP]
+      | Stmt.Pattern.Ident x -> [SWAP]
+      | Stmt.Pattern.Sexp (_, xs) -> List.concat (List.mapi (fun i x -> [DUP; CONST i; CALL ("$elem", 2, false)] @ inner x) xs) @ [DROP]
+    in
+    inner p @ [ENTER (Stmt.Pattern.vars p)]
   and expr e =
     match e with
     | Expr.Const n -> [CONST n]
@@ -201,17 +211,18 @@ let compile (defs, p) =
     | Stmt.Call (fun_name, args) -> env, false, call fun_name (List.rev args) true
     | Stmt.Case (e, bs) -> (
       let lend, env = env#get_label in
-      let rec traverse branches env lbl =
+      let rec traverse branches env lbl n =
         match branches with
         | [] -> env, []
-        | (pat, body)::branches' ->
+        | (pat, body)::branches' -> (
           let env, _, body_compiled = compile_stmt l env body in
-          let lfalse, env = env#get_label in
-          let env, code = traverse branches' env (Some lfalse) in
-          env, (match lbl with None -> [] | Some l -> [LABEL l]) @ (pattern lfalse pat) @ bindings pat @ body_compiled @ [LEAVE; JMP lend] @ code
+          let lfalse, env = if n = 0 then lend, env else env#get_label in
+          let env, code = traverse branches' env (Some lfalse) (n - 1) in
+          env, (match lbl with None -> [] | Some l -> [LABEL l]) @ (pattern lfalse pat) @ bindings pat @ body_compiled @ [LEAVE] @ (if n = 0 then [] else [JMP lend]) @ code
+        )
       in
-      let env, code = traverse bs env None in
-      env, false, expr e @ code
+      let env, code = traverse bs env None (List.length bs - 1) in
+      env, false, expr e @ code @ [LABEL lend]
     )
     | Stmt.Return e -> (
       match e with
