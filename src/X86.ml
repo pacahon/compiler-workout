@@ -121,11 +121,12 @@ let compile env code =
           let env, pushs = push_args env [] n in
           let pushs =
             match f with
-            | "Barray" -> List.rev @@ (Push (L n)) :: pushs
-            | "Bsta"   ->
+            | "Belem" -> List.rev pushs
+            | "Barray" | "Bsexp" -> List.rev @@ (Push (L n)) :: pushs
+            | "Bsta"     ->
               let x::v::is = List.rev pushs in
               is @ [x; v] @ [Push (L (n-2))]
-            | _  -> List.rev pushs 
+            | _  -> pushs
           in
           env, pushr @ pushs @ [Call f; Binop ("+", L (n*4), esp)] @ (List.rev popr)
       in
@@ -149,7 +150,10 @@ let compile env code =
           let l, env = env#allocate in
           let env, call = call env ".string" 1 false in
           env, Mov (M ("$" ^ s), l) :: call
-        | SEXP (tag, len) -> failwith "UNDEFINED BEHAVIOR"
+        | SEXP (tag, n) ->
+          let env, call = call env ".sexp" (n + 1) true in
+          (* FIXME: divide by 2^31 ? Ocamls int on 64-bit is 8 bytes *)
+          env, [Push (L (Hashtbl.hash tag))] @ call
         | LD x ->
           let s, env' = (env#global x)#allocate in
           env', mov (env'#loc x) s

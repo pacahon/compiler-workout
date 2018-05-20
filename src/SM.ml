@@ -152,7 +152,7 @@ let compile (defs, p) =
   let label s = "L" ^ s in
   let rec call f args p =
     let args_code = List.concat @@ List.map expr args in
-    args_code @ [CALL (label f, List.length args, p)]
+    args_code @ [CALL (f, List.length args, p)]
   and pattern lfalse = function
     | Stmt.Pattern.Wildcard -> [DROP]
     | Stmt.Pattern.Ident _ -> [DROP]
@@ -175,7 +175,7 @@ let compile (defs, p) =
     | Expr.Binop (op, e1, e2) -> expr e1 @ expr e2 @ [BINOP op]
     | Expr.Elem (xs_e, index_e) -> call ".elem" [xs_e; index_e] false
     | Expr.Length xs_e -> call ".length" [xs_e] false
-    | Expr.Call (fun_name, args) -> call fun_name (List.rev args) false
+    | Expr.Call (fun_name, args) -> call (label fun_name) (List.rev args) false
   in
   let rec compile_stmt l env stmt =
     match stmt with
@@ -208,7 +208,7 @@ let compile (defs, p) =
       let env, _, body = compile_stmt l env s in
       env, false, [LABEL loop_label] @ body @ expr e @ [CJMP ("z", loop_label)]
     )
-    | Stmt.Call (fun_name, args) -> env, false, call fun_name (List.rev args) true
+    | Stmt.Call (fun_name, args) -> env, false, call (label fun_name) (List.rev args) true
     | Stmt.Case (e, bs) -> (
       let lend, env = env#get_label in
       let rec traverse branches env lbl n =
