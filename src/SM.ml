@@ -148,7 +148,7 @@ let run p i =
    Takes a program in the source language and returns an equivalent program for the
    stack machine
 *)
-let compile (defs, p) = 
+let compile (defs, p) =
   let label s = "L" ^ s in
   let rec call f args p =
     let args_code = List.concat @@ List.map expr args in

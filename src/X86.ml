@@ -137,6 +137,9 @@ let compile env code =
       | R _, _ | _, R _ -> [Mov (src, dest)]
       | _ -> [Mov (src, eax); Mov (eax, dest)]
     in
+    let tag_to_int tag =
+      (Hashtbl.hash tag) mod int_of_float(2.**32.)
+    in
     match scode with
     | [] -> env, []
     | instr :: scode' ->
@@ -151,9 +154,8 @@ let compile env code =
           let env, call = call env ".string" 1 false in
           env, Mov (M ("$" ^ s), l) :: call
         | SEXP (tag, n) ->
-          let env, call = call env ".sexp" (n + 1) true in
-          (* FIXME: divide by 2^31 ? Ocamls int on 64-bit is 8 bytes *)
-          env, [Push (L (Hashtbl.hash tag))] @ call
+          let env, call = call env ".sexp" (n + 1) false in
+          env, [Push (L (tag_to_int tag))] @ call
         | LD x ->
           let s, env' = (env#global x)#allocate in
           env', mov (env'#loc x) s
