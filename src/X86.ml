@@ -167,8 +167,9 @@ let compile env code =
           let env, call = call env ".string" 1 false in
           env, Mov (M ("$" ^ s), l) :: call
         | SEXP (tag, n) ->
+          let s, env' = env#allocate in
           let env, call = call env ".sexp" (n + 1) false in
-          env, [Push (L (tag_to_int tag))] @ call
+          env, [Mov (L (tag_to_int tag), s)] @ call
         | LD x ->
           let s, env' = (env#global x)#allocate in
           env', mov (env'#loc x) s
