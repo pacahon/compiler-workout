@@ -140,22 +140,6 @@ let compile env code =
       | R _, _ | _, R _ -> [Mov (src, dest)]
       | _ -> [Mov (src, eax); Mov (eax, dest)]
     in
-    (* Packing first 5 symbols of tag to int *)
-    let tag_to_int tag =
-      let len = String.length tag in
-      let prefix = String.sub tag 0 (if len < 5 then len else 5) in
-      let prefix_len = String.length prefix in
-      let ord = function
-        | '_' -> 53
-        |  ch  -> Char.code ch - (if ch > 'Z' then 70 else 64)
-      in
-      let rec pack acc n =
-        if n >= prefix_len
-        then acc
-        else pack ((acc lsl 6) lor (ord prefix.[n])) (n + 1)
-      in
-      pack 0 0
-    in
     match scode with
     | [] -> env, []
     | instr :: scode' ->
@@ -170,8 +154,9 @@ let compile env code =
           let env, call = call env ".string" 1 false in
           env, Mov (M ("$" ^ s), l) :: call
         | SEXP (tag, n) ->
+          let s, env = env#allocate in
           let env, call = call env ".sexp" (n + 1) false in
-          env, [Push (L (tag_to_int tag))] @ call
+          env, [Mov (L (env#hash tag), s)] @ call
         | LD x ->
           let s, env' = (env#global x)#allocate in
           env', mov (env'#loc x) s
@@ -304,13 +289,13 @@ class env =
     (* allocates a fresh position on a symbolic stack *)
     method allocate =    
       let x, n =
-	let rec allocate' = function
-	| []                            -> ebx          , 0
-	| (S n)::_                      -> S (n+1)      , n+2
-	| (R n)::_ when n < num_of_regs -> R (n+1)      , stack_slots
-	| _                             -> S static_size, static_size+1
-	in
-	allocate' stack
+        let rec allocate' = function
+        | []                            -> ebx          , 0
+        | (S n)::_                      -> S (n+1)      , n + 2
+        | (R n)::_ when n < num_of_regs -> R (n+1)      , stack_slots
+        | _                             -> S static_size, static_size + 1
+        in
+        allocate' stack
       in
       x, {< stack_slots = max n stack_slots; stack = x::stack >}
 
