@@ -137,8 +137,21 @@ let compile env code =
       | R _, _ | _, R _ -> [Mov (src, dest)]
       | _ -> [Mov (src, eax); Mov (eax, dest)]
     in
+    (* Packing first 5 symbols of tag to int *)
     let tag_to_int tag =
-      (Hashtbl.hash tag) mod int_of_float(2.**32.)
+      let len = String.length tag in
+      let prefix = String.sub tag 0 (if len < 5 then len else 5) in
+      let prefix_len = String.length prefix in
+      let ord = function
+        | '_' -> 53
+        |  ch  -> Char.code ch - (if ch > 'Z' then 70 else 64)
+      in
+      let rec pack acc n =
+        if n >= prefix_len
+        then acc
+        else pack ((acc lsl 6) lor (ord prefix.[n])) (n + 1)
+      in
+      pack 0 0
     in
     match scode with
     | [] -> env, []
