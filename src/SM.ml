@@ -114,6 +114,7 @@ let rec eval env ((cstack, stack, ((st, i, o) as c)) as conf) = function
    Takes a program, an input stream, and returns an output stream this program calculates
 *)
 let run p i =
+  (* print_prg p; *)
   let module M = Map.Make (String) in
   let rec make_map m = function
   | []              -> m
@@ -152,18 +153,35 @@ let compile (defs, p) =
   let rec call f args p =
     let args_code = List.concat @@ List.map expr args in
     args_code @ [CALL (f, List.length args, p)]
-  and pattern lfalse = function
-    | Stmt.Pattern.Wildcard -> [DROP]
-    | Stmt.Pattern.Ident _ -> [DROP]
-    | Stmt.Pattern.Sexp (tag_name, xs) -> [DUP; TAG tag_name; CJMP ("z", lfalse)] @ List.concat (List.mapi (fun i x -> [DUP; CONST i; CALL (".elem", 2, false)] @ pattern lfalse x) xs)
-    | _ -> [JMP lfalse]
-  and bindings p =
-    let rec inner = function
-      | Stmt.Pattern.Wildcard -> [DROP]
-      | Stmt.Pattern.Ident x -> [SWAP]
-      | Stmt.Pattern.Sexp (_, xs) -> List.concat (List.mapi (fun i x -> [DUP; CONST i; CALL (".elem", 2, false)] @ inner x) xs) @ [DROP]
+  and pattern env lfalse is_last_pattern x =
+    let rec pattern' env lfalse inner level = function
+      | Stmt.Pattern.Wildcard -> env, (if inner then [DROP] else [])
+      | Stmt.Pattern.Ident _ -> env, (if inner then [DROP] else [])
+      | Stmt.Pattern.Sexp (tag_name, xs) -> (
+        let ok, env = env#get_label in
+        let (env, _, acc) =
+          List.fold_left (fun (env, i, acc) x ->
+                            let env, rest_patterns = pattern' env lfalse true (level + 1) x in
+                            env, (i + 1), acc @ [DUP; CONST i; CALL (".elem", 2, false)] @ rest_patterns)
+                         (env, 0, []) xs
+        in
+        env, [DUP; TAG tag_name; CJMP ("nz", ok)] @ (Language.list_init (if is_last_pattern then level + 1 else level) (fun _ -> DROP)) @ [JMP lfalse; LABEL ok] @ acc @ (if inner then [DROP] else [])
+      )
+      | _ -> env, [JMP lfalse]
     in
-    inner p @ [ENTER (Stmt.Pattern.vars p)]
+    pattern' env lfalse false 0 x
+  and bindings p =
+    let rec bind inner acc = function
+      | Stmt.Pattern.Wildcard -> acc @ (if inner then [DROP] else [])
+      | Stmt.Pattern.Ident x -> acc @ (if inner then [SWAP] else [DUP])
+      | Stmt.Pattern.Sexp (_, xs) ->
+        let lift i x =
+          let code = (if inner then [] else [DUP]) @ [CONST i; CALL (".elem", 2, false)] in
+          bind true (acc @ code) x
+        in
+        List.concat (List.mapi lift xs)
+    in
+    bind false [] p @ [DROP; ENTER (Stmt.Pattern.vars p)]
   and expr e =
     match e with
     | Expr.Const n -> [CONST n]
@@ -217,7 +235,8 @@ let compile (defs, p) =
           let env, _, body_compiled = compile_stmt l env body in
           let lfalse, env = if n = 0 then lend, env else env#get_label in
           let env, code = traverse branches' env (Some lfalse) (n - 1) in
-          env, (match lbl with None -> [] | Some l -> [LABEL l]) @ (pattern lfalse pat) @ bindings pat @ body_compiled @ [LEAVE] @ (if n = 0 then [] else [JMP lend]) @ code
+          let env, pattern_code = pattern env lfalse (n = 0) pat in
+          env, (match lbl with None -> [] | Some l -> [LABEL l]) @ pattern_code @ bindings pat @ body_compiled @ [LEAVE] @ (if n = 0 then [] else [JMP lend]) @ code
         )
       in
       let env, code = traverse bs env None (List.length bs - 1) in
