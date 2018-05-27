@@ -124,7 +124,7 @@ let compile env code =
           let env, pushs = push_args env [] n in
           let pushs =
             match f with
-            | "Belem" -> List.rev pushs
+            | "Belem"  | "Btag"  -> List.rev pushs
             | "Barray" | "Bsexp" -> List.rev @@ (Push (L n)) :: pushs
             | "Bsta" ->
               let x::v::is = List.rev pushs in
@@ -145,48 +145,6 @@ let compile env code =
     | instr :: scode' ->
       let env', code' =
         match instr with
-        | CONST n ->
-          let s, env' = env#allocate in
-          env', [Mov (L n, s)]
-        | STRING s ->
-          let s, env = env#string s in
-          let l, env = env#allocate in
-          let env, call = call env ".string" 1 false in
-          env, Mov (M ("$" ^ s), l) :: call
-        | SEXP (tag, n) ->
-          let s, env = env#allocate in
-          let env, call = call env ".sexp" (n + 1) false in
-          env, [Mov (L (env#hash tag), s)] @ call
-        | LD x ->
-          let s, env' = (env#global x)#allocate in
-          env', mov (env'#loc x) s
-        | ST x ->
-          let s, env' = (env#global x)#pop in
-          env', mov s (env'#loc x)
-        | STA (x, n) ->
-          let s, env = (env#global x)#allocate in
-          let push = mov (env#loc x) s in
-          let env, code = call env ".sta" (n + 2) true in
-          env, push @ code
-        | LABEL s -> env, [Label s]
-        | JMP   l -> env, [Jmp l]
-        | CJMP (s, l) ->
-          let x, env = env#pop in
-          env, [Binop ("cmp", L 0, x); CJmp (s, l)]
-        | BEGIN (f, a, l) ->
-          let env = env#enter f a l in
-          env, [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env#lsize), esp)]
-        | END ->
-          env, [Label env#epilogue;
-                Mov (ebp, esp);
-                Pop ebp;
-                Ret;
-                Meta (Printf.sprintf "\t.set\t%s,\t%d" env#lsize (env#allocated * word_size))]
-        | CALL (f, n, p) -> call env f n p
-        | RET b ->
-          if b
-          then let x, env = env#pop in env, [Mov (x, eax); Jmp env#epilogue]
-          else env, [Jmp env#epilogue]
         | BINOP op -> (
           let x, y, env' = env#pop2 in
           env'#push y,
@@ -221,6 +179,68 @@ let compile env code =
              else [Binop (op, x, y)]
           )
         )
+        | CONST n ->
+          let s, env' = env#allocate in
+          env', [Mov (L n, s)]
+        | STRING s ->
+          let s, env = env#string s in
+          let l, env = env#allocate in
+          let env, call = call env ".string" 1 false in
+          env, Mov (M ("$" ^ s), l) :: call
+        | SEXP (tag, n) ->
+          let s, env = env#allocate in
+          let env, call = call env ".sexp" (n + 1) false in
+          env, [Mov (L (env#hash tag), s)] @ call
+        | LD x ->
+          let s, env' = (env#global x)#allocate in
+          env', mov (env'#loc x) s
+        | ST x ->
+          let s, env' = (env#global x)#pop in
+          env', mov s (env'#loc x)
+        | STA (x, n) ->
+          let s, env = (env#global x)#allocate in
+          let push = mov (env#loc x) s in
+          let env, code = call env ".sta" (n + 2) true in
+          env, push @ code
+        | LABEL s ->
+          let env' =
+            if env#is_barrier
+            then (env#drop_barrier)#retrieve_stack s
+            else env
+          in
+          env', [Label s]
+        | JMP l -> (env#set_stack l)#set_barrier, [Jmp l]
+        | CJMP (s, l) ->
+          let x, env = env#pop in
+          env#set_stack l, [Binop ("cmp", L 0, x); CJmp (s, l)]
+        | BEGIN (f, a, l) ->
+          let env = env#enter f a l in
+          env, [Push ebp; Mov (esp, ebp); Binop ("-", M ("$" ^ env#lsize), esp)]
+        | END ->
+          env, [Label env#epilogue;
+                Mov (ebp, esp);
+                Pop ebp;
+                Ret;
+                Meta (Printf.sprintf "\t.set\t%s,\t%d" env#lsize (env#allocated * word_size))]
+        | CALL (f, n, p) -> call env f n p
+        | RET b ->
+          if b
+          then let x, env = env#pop in env, [Mov (x, eax); Jmp env#epilogue]
+          else env, [Jmp env#epilogue]
+        | DROP -> snd (env#pop), []
+        | DUP ->
+          let x = env#peek in
+          let s, env' = env#allocate in
+          env', mov x s
+        | SWAP ->
+          let x, y = env#peek2 in
+          env, [Push x; Push y; Pop x; Pop y]
+        | TAG t ->
+          let s, env = env#allocate in
+          let env, call = call env ".tag" 2 false in
+          env, [Mov (L (env#hash t), s)] @ call
+        | ENTER xs -> env#scope xs, []
+        | LEAVE -> env#unscope, []
       in
       let env'', code'' = compile' env' scode' in
       env'', code' @ code''
