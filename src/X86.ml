@@ -131,6 +131,7 @@ let compile env code =
               is @ [x; v] @ [Push (L (n-2))]
             | _  -> pushs
           in
+          let n = List.length pushs in
           env, pushr @ pushs @ [Call f; Binop ("+", L (n*4), esp)] @ (List.rev popr)
       in
       (if p then env, code else let y, env = env#allocate in env, code @ [Mov (eax, y)])
@@ -239,7 +240,16 @@ let compile env code =
           let s, env = env#allocate in
           let env, call = call env ".tag" 2 false in
           env, [Mov (L (env#hash t), s)] @ call
-        | ENTER xs -> env#scope xs, []
+        | ENTER xs ->
+          let env, code =
+            List.fold_left
+              (fun (env, code) v ->
+                let s, env = env#pop in
+                env, (mov s @@ env#loc v) :: code
+              )
+              (env#scope @@ List.rev xs, []) xs
+          in
+          env, List.flatten @@ List.rev code
         | LEAVE -> env#unscope, []
       in
       let env'', code'' = compile' env' scode' in
